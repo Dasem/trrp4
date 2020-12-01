@@ -35,7 +35,7 @@ type options struct {
 
 type service struct {
 	dataClient  *pubsub.Client
-	resChan     chan model.DataMuseResults
+	resChan     chan model.DataMuseResult
 	upgrader    websocket.Upgrader
 	connections map[string]chan internalRequest
 }
@@ -117,6 +117,8 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 		Req: model.DataMuseRequest{Word: word},
 	}
 
+	var fromMuseApi model.DataMuseResults
+
 	for k, v := range s.connections {
 		v := v
 		k := k
@@ -124,8 +126,8 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 		req.ResCh = resCh
 		v <- req
 		log.Info().Msg("Sent")
-		resp, ok := <-req.ResCh
-		log.Info().Msgf("Get: %#v", resp)
+		fromMuseApi, ok = <-req.ResCh
+		log.Info().Msgf("Get: %#v", fromMuseApi)
 		if !ok {
 			log.Error().Msgf("Failed to do req for: %v", k)
 			continue
@@ -133,11 +135,17 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 
-	fromMuseApi := model.DataMuseResults{}
+	if fromMuseApi == nil {
+		log.Error().Msg("There is no ready processor for your response")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
 
 	// Sending to pubsub
 	go func() {
-		s.resChan <- fromMuseApi
+		for _, item := range fromMuseApi {
+			s.resChan <- item
+		}
 		log.Info().Msgf("Sent to pubsub channel")
 	}()
 
@@ -176,7 +184,7 @@ func main() {
 
 	s := service{
 		dataClient:  dataClient,
-		resChan:     make(chan model.DataMuseResults),
+		resChan:     make(chan model.DataMuseResult),
 		upgrader:    websocket.Upgrader{},
 		connections: make(map[string]chan internalRequest),
 	}
