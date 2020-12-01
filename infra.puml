@@ -1,0 +1,61 @@
+@startuml
+
+actor User as u
+control Client as c
+control Dispatcher as r
+queue "Message Queue" as q
+control Worker as w
+database Storage as s
+participant ExternalAPI as api
+
+alt StartClient
+    u -> c: StartSystem()
+    c -> r: SetupWSConnection()
+    c <-- r: done
+    u <-- c: done
+else StartWorker
+    w ->> q: SubscribeOnMsg
+    w -> s: SetupConnection
+    w <-- s: done
+else GetCommand
+    u -> c: GeneratePicture()
+    c -> r: GeneratePicture()
+    r ->> q: GeneratePicture()
+    q -> w: command
+    w -> api: GeneratePicture()
+    w <-- api: picture
+    w -> s: Save(picture)
+    w <-- s: id
+    w --> q: id, picture
+    r <-- q: id, picture
+    r ->> q: SubscribeForChanges(id)
+    c <-- r: id, picture
+    c --> u: Display(picture)
+else GetPicture
+    u -> c: GetPicture(id)
+    c -> r: GetPicture(id)
+    r ->> q: GetPicture(id)
+    q -> w: id
+    w -> s: Get(id)
+    w <-- s: picture
+    w --> q: picture
+    r <<-- q: picture
+    r ->> q: SubscribeForChanges(id)
+    c <-- r: picture
+    c --> u: Display(picture)
+else DistributeChanges
+    u -> c: MakeChanges()
+    c -> r: SaveChanges()
+    r -> q: SaveChanges()
+    q -> w: id, changes
+    w -> s: SaveChanges(id, changes)
+    w <-- s: done
+    w ->> q: id, changes
+    r <<-- q: id, changes
+    loop For each client with same id
+    r -> c: ApplyChanges(changes)
+    r <-- c: done
+    end
+end
+
+@enduml
