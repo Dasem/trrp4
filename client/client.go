@@ -19,7 +19,7 @@ import (
 var botId string
 
 type options struct {
-	DispatcherURL string `long:"dispatcher-host" env:"DISPATCHER" required:"true" default:"localhost:8080"`
+	DispatcherURL string `long:"dispatcher-host" env:"DISPATCHER" required:"true" default:"refined-byte-297215.ew.r.appspot.com"`
 	Interval      string `long:"interval" env:"INTERVAL" required:"true" default:"10s"`
 }
 
