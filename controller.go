@@ -4,12 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
-
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
@@ -25,8 +22,8 @@ var (
 )
 
 type internalRequest struct {
-	ResCh chan model.AgentDataRes
-	Req   model.AgentDataReq
+	ResCh chan model.DataMuseResults
+	Req   model.DataMuseRequest
 }
 
 type options struct {
@@ -38,7 +35,7 @@ type options struct {
 
 type service struct {
 	dataClient  *pubsub.Client
-	resChan     chan model.AgentDataRes
+	resChan     chan model.DataMuseResults
 	upgrader    websocket.Upgrader
 	connections map[string]chan internalRequest
 }
@@ -94,7 +91,7 @@ func (s *service) Subscribe(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			var res model.AgentDataRes
+			var res model.DataMuseResults
 			if err := c.ReadJSON(&res); err != nil {
 				log.Error().Err(err).Msg("Failed to read json")
 				close(req.ResCh)
@@ -107,99 +104,55 @@ func (s *service) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 // Publish commands handler
 func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
-	data, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to read msg")
+	keys, ok := r.URL.Query()["word"]
+
+	if !ok || len(keys[0]) < 1 {
+		log.Error().Msg("Url Param 'word' is missing")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
+	word := keys[0]
 
-	var msg model.SourceDefinition
-	if err := json.Unmarshal(data, &msg); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal msg")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		return
-	}
-
-	wg := sync.WaitGroup{}
-	id := uuid.NewV4().String()
 	req := internalRequest{
-		Req: model.AgentDataReq{
-			RequestId: id,
-			Def:       msg,
-		},
+		Req: model.DataMuseRequest{Word: word},
 	}
 
-	log.Info().Msgf("Publish command: %v", msg)
-
-	connMu.Lock()
-	results := make([]model.AgentDataRes, len(s.connections))
-	mu := sync.Mutex{}
-	mu1 := sync.Mutex{}
-	cnt := 0
 	for k, v := range s.connections {
 		v := v
 		k := k
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resCh := make(chan model.AgentDataRes)
-			req.ResCh = resCh
-			v <- req
-			log.Info().Msg("Sent")
-			resp, ok := <-req.ResCh
-			log.Info().Msgf("Get: %#v", resp)
-			if !ok {
-				log.Error().Msgf("Failed to do req for: %v", k)
-				return
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			mu1.Lock()
-			results[cnt] = resp
-			cnt++
-			log.Info().Msgf("cnt: %#v", cnt)
-			mu1.Unlock()
-		}()
-	}
-	connMu.Unlock()
-
-	wg.Wait()
-
-	res1 := []model.AgentDataRes{}
-	for _, v := range results {
-		if v.StatusCode != 0 {
-			res1 = append(res1, v)
+		resCh := make(chan model.DataMuseResults)
+		req.ResCh = resCh
+		v <- req
+		log.Info().Msg("Sent")
+		resp, ok := <-req.ResCh
+		log.Info().Msgf("Get: %#v", resp)
+		if !ok {
+			log.Error().Msgf("Failed to do req for: %v", k)
+			continue
 		}
+		break
 	}
 
-	wg.Add(2)
+	fromMuseApi := model.DataMuseResults{}
+
+	// Sending to pubsub
 	go func() {
-		defer log.Info().Msg("wg1 DONE")
-		for k, v := range res1 {
-			s.resChan <- v
-			log.Info().Msgf("Sent to pubsub chanel: %#v", k)
-		}
-		wg.Done()
+		s.resChan <- fromMuseApi
+		log.Info().Msgf("Sent to pubsub channel")
 	}()
 
-	go func() {
-		defer log.Info().Msg("wg2 DONE")
-		defer wg.Done()
-		data1, err := json.Marshal(res1)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to marshal results")
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			return
-		}
+	// Sending to user
+	forUser, err := json.Marshal(fromMuseApi)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal results")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
 
-		log.Info().Msgf("Result len: %#v", len(data1))
-		w.WriteHeader(http.StatusOK)
-		w.Write(data1)
-	}()
+	log.Info().Msgf("Sended to user, %v", forUser)
+	w.WriteHeader(http.StatusOK)
+	w.Write(forUser)
 
-	wg.Wait()
-	log.Info().Msgf("results: %#v", len(res1))
 }
 
 // Check server handler
@@ -223,7 +176,7 @@ func main() {
 
 	s := service{
 		dataClient:  dataClient,
-		resChan:     make(chan model.AgentDataRes),
+		resChan:     make(chan model.DataMuseResults),
 		upgrader:    websocket.Upgrader{},
 		connections: make(map[string]chan internalRequest),
 	}

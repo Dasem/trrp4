@@ -1,0 +1,14 @@
+runtime: go # the most stable
+env: flex
+network:
+  session_affinity: true
+
+main: ./cmd/controller
+manual_scaling:
+  instances: 1
+
+
+handlers:
+- url: /.*
+  secure: optional
+  script: auto

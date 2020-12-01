@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -21,7 +19,7 @@ import (
 var botId string
 
 type options struct {
-	DispatcherURL string `long:"dispatcher-host" env:"DISPATCHER" required:"true" default:"localhost"`
+	DispatcherURL string `long:"dispatcher-host" env:"DISPATCHER" required:"true" default:"refined-byte-297215.ew.r.appspot.com"`
 	Interval      string `long:"interval" env:"INTERVAL" required:"true" default:"10s"`
 }
 
@@ -54,90 +52,38 @@ func subscribeForCommands(dispatcherHost string) error {
 	defer c.Close()
 	log.Info().Msg("Subscribed")
 	cnt := 0
-	var msg model.AgentDataReq
-	client := &http.Client{}
+	var museRequest model.DataMuseRequest
 	for {
-		if err := c.ReadJSON(&msg); err != nil {
+		if err := c.ReadJSON(&museRequest); err != nil {
 			return err
 		}
 		cnt++
 		log.Info().Msgf("Got %d dataMuseResult", cnt)
 
-		r := bytes.NewReader(msg.Def.Body)
+		escaped := url.QueryEscape(museRequest.Word)
 
-		agentDataRes := model.AgentDataRes{
-			BotId:     botId,
-			Def:       msg.Def,
-			RequestId: msg.RequestId,
-		}
-		// timeout should be greater than 2 sec
-		timeout, err := time.ParseDuration(msg.Def.Timeout)
+		resp, err := http.Get("https://api.datamuse.com/words?max=10&ml=" + escaped)
 		if err != nil {
-			agentDataRes.Err = err.Error()
-			log.Error().Err(err).Msg("Failed to parse timeout")
-			if err := c.WriteJSON(agentDataRes); err != nil {
-				return err
-			}
-			continue
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(ctx, msg.Def.HttpMethod, msg.Def.Endpoint, r)
-		if err != nil {
-			agentDataRes.Err = err.Error()
-			log.Error().Err(err).Msg("Failed to create request")
-			if err := c.WriteJSON(agentDataRes); err != nil {
-				return err
-			}
-			continue
-		}
-
-		for k, v := range msg.Def.Headers {
-			req.Header.Add(k, v)
-		}
-
-		start := time.Now()
-
-		resp, err := client.Do(req)
-		if err != nil {
-			agentDataRes.Err = err.Error()
 			log.Error().Err(err).Msg("Failed to do request")
-			if err := c.WriteJSON(agentDataRes); err != nil {
-				return err
-			}
 			continue
 		}
-
-		agentDataRes.RequestTime = time.Now().Sub(start).String()
 
 		data, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			agentDataRes.Err = err.Error()
 			log.Error().Err(err).Msg("Failed to read data from request")
-			if err := c.WriteJSON(agentDataRes); err != nil {
-				return err
-			}
 			continue
 		}
 
-		var dataMuseResult model.DataMuseResult
-		if err := json.Unmarshal(data, &dataMuseResult); err != nil {
-			agentDataRes.Err = err.Error()
+		var dataMuseResults model.DataMuseResults
+		if err := json.Unmarshal(data, &dataMuseResults); err != nil {
 			log.Error().Err(err).Msg("Failed to unmarshal dataMuseResult")
-			if err := c.WriteJSON(agentDataRes); err != nil {
-				return err
-			}
 			continue
 		}
 
-		agentDataRes.EndpointData = dataMuseResult
-		agentDataRes.StatusCode = resp.StatusCode
-
-		if err := c.WriteJSON(agentDataRes); err != nil {
+		if err := c.WriteJSON(dataMuseResults); err != nil {
 			return err
 		}
-		log.Info().Msgf("Sent to router: %#v", agentDataRes)
+		log.Info().Msgf("Sent to router: %#v", dataMuseResults)
 	}
 }
 
