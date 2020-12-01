@@ -186,7 +186,7 @@ func main() {
 
 	// Initialize server
 	r := chi.NewRouter()
-	r.Post("/command", s.PublishCommand)
+	r.Get("/command", s.PublishCommand)
 	r.HandleFunc("/subscribe", s.Subscribe)
 	r.Get("/health", s.Check)
 
