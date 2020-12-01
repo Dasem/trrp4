@@ -16,8 +16,8 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/rs/zerolog/log"
 
-	"github.com/Dasem/trrp4/model.go"
-	"github.com/danilkastar440/TRRP_LAST/pkg/pubsub"
+	"github.com/Dasem/trrp4/model"
+	"github.com/Dasem/trrp4/pubsub"
 )
 
 var (
@@ -25,20 +25,20 @@ var (
 )
 
 type internalRequest struct {
-	ResCh chan models.AgentDataRes
-	Req   models.AgentDataReq
+	ResCh chan model.AgentDataRes
+	Req   model.AgentDataReq
 }
 
 type options struct {
-	ProjectID     string `long:"projectID" env:"PROJECT_ID" required:"true" default:"trrv-univer"`
-	DataTopicName string `long:"dataTopicName" env:"DATA_TOPIC_NAME" required:"true" default:"results"`
-	DataSubName   string `long:"dataSubName" env:"DATA_SUB_NAME" required:"true" default:"results-sub"`
+	ProjectID     string `long:"projectID" env:"PROJECT_ID" required:"true" default:"refined-byte-297215"`
+	DataTopicName string `long:"dataTopicName" env:"DATA_TOPIC_NAME" required:"true" default:"synonyms"`
+	DataSubName   string `long:"dataSubName" env:"DATA_SUB_NAME" required:"true" default:"synonyms-sub"`
 	Port          string `long:"port" env:"PORT" required:"true" default:"8080"`
 }
 
 type service struct {
 	dataClient  *pubsub.Client
-	resChan     chan models.AgentDataRes
+	resChan     chan model.AgentDataRes
 	upgrader    websocket.Upgrader
 	connections map[string]chan internalRequest
 }
@@ -94,7 +94,7 @@ func (s *service) Subscribe(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			var res models.AgentDataRes
+			var res model.AgentDataRes
 			if err := c.ReadJSON(&res); err != nil {
 				log.Error().Err(err).Msg("Failed to read json")
 				close(req.ResCh)
@@ -114,7 +114,7 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg models.SourceDefinition
+	var msg model.SourceDefinition
 	if err := json.Unmarshal(data, &msg); err != nil {
 		log.Error().Err(err).Msg("Failed to unmarshal msg")
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -124,7 +124,7 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 	wg := sync.WaitGroup{}
 	id := uuid.NewV4().String()
 	req := internalRequest{
-		Req: models.AgentDataReq{
+		Req: model.AgentDataReq{
 			RequestId: id,
 			Def:       msg,
 		},
@@ -133,7 +133,7 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 	log.Info().Msgf("Publish command: %v", msg)
 
 	connMu.Lock()
-	results := make([]models.AgentDataRes, len(s.connections))
+	results := make([]model.AgentDataRes, len(s.connections))
 	mu := sync.Mutex{}
 	mu1 := sync.Mutex{}
 	cnt := 0
@@ -143,7 +143,7 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resCh := make(chan models.AgentDataRes)
+			resCh := make(chan model.AgentDataRes)
 			req.ResCh = resCh
 			v <- req
 			log.Info().Msg("Sent")
@@ -166,7 +166,7 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 
 	wg.Wait()
 
-	res1 := []models.AgentDataRes{}
+	res1 := []model.AgentDataRes{}
 	for _, v := range results {
 		if v.StatusCode != 0 {
 			res1 = append(res1, v)
@@ -223,7 +223,7 @@ func main() {
 
 	s := service{
 		dataClient:  dataClient,
-		resChan:     make(chan models.AgentDataRes),
+		resChan:     make(chan model.AgentDataRes),
 		upgrader:    websocket.Upgrader{},
 		connections: make(map[string]chan internalRequest),
 	}
