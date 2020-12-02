@@ -162,6 +162,7 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 	// Sending to pubsub
 	go func() {
 		for _, item := range fromMuseApi {
+			item.RequestDate = time.Now()
 			s.resChan <- item
 		}
 		log.Info().Msgf("Sent to pubsub channel")
