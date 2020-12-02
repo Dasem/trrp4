@@ -102,6 +102,24 @@ func (s *service) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func filter(ss []string, test func(string) bool) (ret []string) {
+	for _, s := range ss {
+		if test(s) {
+			ret = append(ret, s)
+		}
+	}
+	return
+}
+
+func find(slice []string, val string) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
+}
+
 // Publish commands handler
 func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 	keys, ok := r.URL.Query()["word"]
@@ -150,7 +168,16 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Sending to user
-	forUser, err := json.Marshal(fromMuseApi)
+	forUserResults := model.ForUserResults{}
+	tagFilter := func(s string) bool { return find([]string{"n", "v", "adj", "adv", "u"}, s) }
+	for _, item := range fromMuseApi {
+		forUserResults = append(forUserResults, model.ForUserResult{
+			Word: item.Word,
+			Tags: filter(item.Tags, tagFilter),
+		})
+	}
+
+	forUser, err := json.Marshal(forUserResults)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to marshal results")
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -160,7 +187,6 @@ func (s *service) PublishCommand(w http.ResponseWriter, r *http.Request) {
 	log.Info().Msgf("Sended to user, %v", forUser)
 	w.WriteHeader(http.StatusOK)
 	w.Write(forUser)
-
 }
 
 // Check server handler

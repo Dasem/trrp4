@@ -7,6 +7,13 @@ type DataMuseResult struct {
 	Tags  []string `json:"tags"`
 }
 
+type ForUserResult struct {
+	Word string   `json:"word"`
+	Tags []string `json:"tags"`
+}
+
+type ForUserResults []ForUserResult
+
 type DataMuseResults []DataMuseResult
 
 type DataMuseRequest struct {
