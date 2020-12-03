@@ -88,7 +88,6 @@ func subscribeForCommands(dispatcherHost string) error {
 }
 
 func main() {
-	// var link = "https://www.cbr-xml-daily.ru/daily_json.js"
 	var opts options
 	if _, err := flags.Parse(&opts); err != nil {
 		log.Fatal().Err(err).Msg("Failed to parse opts")
