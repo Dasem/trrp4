@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/go-chi/chi"
+	"net/http"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -19,6 +22,7 @@ type options struct {
 	ProjectID string `long:"projectID" env:"PROJECT_ID" required:"true" default:"refined-byte-297215"`
 	TopicName string `long:"TopicName" env:"TOPIC_NAME" required:"true" default:"synonyms"`
 	SubName   string `long:"SubName" env:"SUB_NAME" required:"true" default:"synonyms-sub"`
+	Port      string `long:"port" env:"PORT" required:"true" default:"8080"`
 }
 
 type server struct {
@@ -44,6 +48,13 @@ func (s *server) handleMsg(ctx context.Context, data []byte) (bool, error) {
 	return true, nil
 }
 
+// Check server handler
+func Check(w http.ResponseWriter, r *http.Request) {
+	log.Info().Msg("Health check")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
 func (s *server) saveResults(ctx context.Context, data map[string]interface{}) error {
 
 	key := uuid.NewV4().String()
@@ -62,6 +73,19 @@ func main() {
 	if _, err := flags.Parse(&opts); err != nil {
 		return
 	}
+
+	r := chi.NewRouter()
+	r.Get("/health", Check)
+
+	httpSrv := http.Server{
+		Addr:    fmt.Sprintf(":%v", opts.Port),
+		Handler: r,
+	}
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil {
+			log.Fatal().Err(err).Msg("Failed to listen and serve")
+		}
+	}()
 
 	log.Info().Msgf("ProjectID: %v Topic: %v Sub: %v", opts.ProjectID, opts.TopicName, opts.SubName)
 
